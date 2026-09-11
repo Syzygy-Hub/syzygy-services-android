@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Fetch ktlint config
+        run: curl -fsSL https://raw.githubusercontent.com/Syzygy-Hub/.github/main/engineering/tooling/android/.editorconfig -o .editorconfig
+
+      - name: Grant Gradle execute permission
+        run: chmod +x gradlew
+
+      - name: Lint
+        run: ./gradlew ktlintCheck
+
+      - name: Build
+        run: ./gradlew build
+
+      - name: Test
+        run: ./gradlew test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: build/reports/tests/test
+          if-no-files-found: warn

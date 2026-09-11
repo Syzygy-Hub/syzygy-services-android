@@ -12,6 +12,7 @@
 
 # Package Files #
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 *.nar
 *.ear
@@ -19,9 +20,49 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# Gradle
+.gradle/
+build/
+
+# virtual machine crash logs
 hs_err_pid*
 replay_pid*
 
-# Kotlin Gradle plugin data, see https://kotlinlang.org/docs/whatsnew20.html#new-directory-for-kotlin-data-in-gradle-projects
+# Kotlin Gradle plugin data
 .kotlin/
+
+# macOS
+.DS_Store
+.github/.DS_Store
+**/.DS_Store
+
+# Editor config (fetched from org CI — not committed)
+.editorconfig
+
+# Local configuration file (sdk path, etc)
+local.properties
+
+# Android Studio generated files and folders
+captures/
+.externalNativeBuild/
+.cxx/
+*.aab
+*.apk
+output-metadata.json
+
+# IntelliJ
+*.iml
+.idea/
+misc.xml
+deploymentTargetDropDown.xml
+render.experimental.xml
+
+# Keystore files
+*.jks
+*.keystore
+
+# Google Services (e.g. APIs or Firebase)
+google-services.json
+
+# Android Profiling
+*.hprof
