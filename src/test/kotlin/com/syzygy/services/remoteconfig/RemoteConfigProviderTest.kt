@@ -76,7 +76,11 @@ class RemoteConfigProviderTest {
                     .setBody("""{"theme":"dark","max_retries":"5"}"""),
             )
             val client = com.syzygy.services.networking.OkHttpNetworkClient(maxRetries = 1)
-            val provider = NetworkRemoteConfigProvider(networkClient = client, configUrl = server.url("/config").toString())
+            val provider =
+                NetworkRemoteConfigProvider(
+                    networkClient = client,
+                    configUrl = server.url("/config").toString(),
+                )
             provider.fetch()
             assertNotNull(provider.lastFetchTime)
             assertEquals("dark", provider.getString("theme"))
