@@ -38,7 +38,10 @@ class ConsoleAnalyticsProvider : AnalyticsProvider {
      * @param event The [AnalyticsEvent] to record.
      */
     override fun track(event: AnalyticsEvent) {
-        println("[Analytics] event=${event.name} props=${event.properties} ts=${event.timestamp.millisecondsSinceEpoch} session=$sessionId")
+        println(
+            "[Analytics] event=${event.name} props=${event.properties} " +
+                "ts=${event.timestamp.millisecondsSinceEpoch} session=$sessionId",
+        )
     }
 
     /**
