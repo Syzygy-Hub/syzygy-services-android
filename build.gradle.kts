@@ -27,6 +27,11 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
 
+    // OkHttp is the standard JVM/Android HTTP client — approved as a platform
+    // networking primitive. MockWebServer is test-only. Both are analogous to
+    // URLSession (iOS), fetch (RN), and dart:io HttpClient (Flutter).
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
     // Unit tests — JUnit 5
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:2.0.21")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
@@ -34,6 +39,9 @@ dependencies {
 
     // Coroutines test
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+
+    // MockWebServer for NetworkClient tests
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
 
 // ---------------------------------------------------------------------------
