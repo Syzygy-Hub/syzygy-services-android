@@ -127,7 +127,10 @@ class ConsoleCrashReporter : CrashReporter {
         val cls = error::class.simpleName
         val msg = error.message
         val crumbs = getBreadcrumbs()
-        println("[CrashReporter] NON_FATAL error=$cls message=$msg metadata=$metadata user=$userId keys=$customKeys breadcrumbs=$crumbs")
+        println(
+            "[CrashReporter] NON_FATAL error=$cls message=$msg metadata=$metadata " +
+                "user=$userId keys=$customKeys breadcrumbs=$crumbs",
+        )
     }
 
     /**
@@ -140,7 +143,10 @@ class ConsoleCrashReporter : CrashReporter {
         metadata: Map<String, String>,
     ) {
         val crumbs = getBreadcrumbs()
-        println("[CrashReporter] FATAL message=$message metadata=$metadata user=$userId keys=$customKeys breadcrumbs=$crumbs")
+        println(
+            "[CrashReporter] FATAL message=$message metadata=$metadata " +
+                "user=$userId keys=$customKeys breadcrumbs=$crumbs",
+        )
     }
 
     /**
