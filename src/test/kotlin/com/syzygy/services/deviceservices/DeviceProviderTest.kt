@@ -93,7 +93,10 @@ class DeviceProviderTest {
         val id = provider.deviceId
 
         // The value must be readable from storage under the canonical key identifier
-        val stored = sharedStorage.get(com.syzygyhub.foundation.contracts.storage.StorageKey<String>("syzygy.device.uuid")) { it }
+        val stored =
+            sharedStorage.get(
+                com.syzygyhub.foundation.contracts.storage.StorageKey<String>("syzygy.device.uuid"),
+            ) { it }
         assertEquals(id, stored, "deviceId must be stored under key 'syzygy.device.uuid'")
     }
 }
