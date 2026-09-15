@@ -62,4 +62,70 @@ class CrashReporterTest {
         val reporter = ConsoleCrashReporter()
         assertTrue(reporter.getCustomKeys().isEmpty())
     }
+
+    // ------------------------------------------------------------------
+    // ITEM 5 — Breadcrumb tests
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `leaveBreadcrumb stores breadcrumb message`() {
+        val reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb("user tapped login button")
+        val crumbs = reporter.getBreadcrumbs()
+        assertEquals(1, crumbs.size)
+        assertEquals("user tapped login button", crumbs[0].message)
+    }
+
+    @Test
+    fun `leaveBreadcrumb stores optional metadata`() {
+        val reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb("network call", mapOf("url" to "https://example.com"))
+        val crumbs = reporter.getBreadcrumbs()
+        assertEquals(1, crumbs.size)
+        assertEquals("https://example.com", crumbs[0].metadata?.get("url"))
+    }
+
+    @Test
+    fun `leaveBreadcrumb without metadata stores null metadata`() {
+        val reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb("event without metadata")
+        assertNull(reporter.getBreadcrumbs()[0].metadata)
+    }
+
+    @Test
+    fun `breadcrumbs are retained in insertion order`() {
+        val reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb("first")
+        reporter.leaveBreadcrumb("second")
+        reporter.leaveBreadcrumb("third")
+        val crumbs = reporter.getBreadcrumbs()
+        assertEquals(listOf("first", "second", "third"), crumbs.map { it.message })
+    }
+
+    @Test
+    fun `circular buffer evicts oldest when max breadcrumbs exceeded`() {
+        val reporter = ConsoleCrashReporter()
+        repeat(ConsoleCrashReporter.MAX_BREADCRUMBS + 5) { i ->
+            reporter.leaveBreadcrumb("crumb-$i")
+        }
+        val crumbs = reporter.getBreadcrumbs()
+        assertEquals(ConsoleCrashReporter.MAX_BREADCRUMBS, crumbs.size)
+        // The oldest 5 should be gone; first retained crumb is "crumb-5"
+        assertEquals("crumb-5", crumbs[0].message)
+    }
+
+    @Test
+    fun `clearBreadcrumbs removes all stored breadcrumbs`() {
+        val reporter = ConsoleCrashReporter()
+        reporter.leaveBreadcrumb("a")
+        reporter.leaveBreadcrumb("b")
+        reporter.clearBreadcrumbs()
+        assertTrue(reporter.getBreadcrumbs().isEmpty())
+    }
+
+    @Test
+    fun `getBreadcrumbs is empty before any leaveBreadcrumb calls`() {
+        val reporter = ConsoleCrashReporter()
+        assertTrue(reporter.getBreadcrumbs().isEmpty())
+    }
 }

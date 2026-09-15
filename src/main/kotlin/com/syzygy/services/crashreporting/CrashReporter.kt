@@ -56,7 +56,38 @@ interface CrashReporter {
         key: String,
         value: String,
     )
+
+    /**
+     * Leaves a breadcrumb with [message] and optional [metadata].
+     *
+     * Breadcrumbs are lightweight trail markers that implementations include
+     * in crash reports to show the sequence of events leading up to the crash.
+     * Implementations may cap the number of retained breadcrumbs.
+     *
+     * @param message A short human-readable description of the event.
+     * @param metadata Optional key-value context for this breadcrumb.
+     */
+    fun leaveBreadcrumb(
+        message: String,
+        metadata: Map<String, String>? = null,
+    )
+
+    /**
+     * Removes all stored breadcrumbs.
+     */
+    fun clearBreadcrumbs()
 }
+
+/**
+ * A single breadcrumb entry retained by [ConsoleCrashReporter].
+ *
+ * @property message A short description of the event.
+ * @property metadata Optional key-value context.
+ */
+data class Breadcrumb(
+    val message: String,
+    val metadata: Map<String, String>?,
+)
 
 /**
  * [CrashReporter] that writes reports to standard output.
@@ -78,8 +109,16 @@ class ConsoleCrashReporter : CrashReporter {
     /** Custom key-value metadata attached to all subsequent reports. */
     private val customKeys = ConcurrentHashMap<String, String>()
 
+    /** Circular buffer holding the last [MAX_BREADCRUMBS] breadcrumbs. */
+    private val breadcrumbs = ArrayDeque<Breadcrumb>(MAX_BREADCRUMBS)
+
+    companion object {
+        /** Maximum number of breadcrumbs retained at any time. */
+        const val MAX_BREADCRUMBS = 20
+    }
+
     /**
-     * Prints [error] and its [metadata] to standard output.
+     * Prints [error] and its [metadata] to standard output, including stored breadcrumbs.
      */
     override fun recordError(
         error: Throwable,
@@ -87,11 +126,12 @@ class ConsoleCrashReporter : CrashReporter {
     ) {
         val cls = error::class.simpleName
         val msg = error.message
-        println("[CrashReporter] NON_FATAL error=$cls message=$msg metadata=$metadata user=$userId keys=$customKeys")
+        val crumbs = getBreadcrumbs()
+        println("[CrashReporter] NON_FATAL error=$cls message=$msg metadata=$metadata user=$userId keys=$customKeys breadcrumbs=$crumbs")
     }
 
     /**
-     * Prints [message] as a fatal crash report to standard output.
+     * Prints [message] as a fatal crash report to standard output, including stored breadcrumbs.
      *
      * No process termination occurs.
      */
@@ -99,7 +139,8 @@ class ConsoleCrashReporter : CrashReporter {
         message: String,
         metadata: Map<String, String>,
     ) {
-        println("[CrashReporter] FATAL message=$message metadata=$metadata user=$userId keys=$customKeys")
+        val crumbs = getBreadcrumbs()
+        println("[CrashReporter] FATAL message=$message metadata=$metadata user=$userId keys=$customKeys breadcrumbs=$crumbs")
     }
 
     /**
@@ -129,4 +170,36 @@ class ConsoleCrashReporter : CrashReporter {
 
     /** Returns the currently configured user email. */
     fun getUserEmail(): String? = userEmail
+
+    /**
+     * Adds [message] and optional [metadata] to the breadcrumb circular buffer.
+     *
+     * When the buffer is full ([MAX_BREADCRUMBS] entries) the oldest breadcrumb
+     * is evicted before the new one is added.
+     */
+    override fun leaveBreadcrumb(
+        message: String,
+        metadata: Map<String, String>?,
+    ) {
+        synchronized(breadcrumbs) {
+            if (breadcrumbs.size >= MAX_BREADCRUMBS) {
+                breadcrumbs.removeFirst()
+            }
+            breadcrumbs.addLast(Breadcrumb(message, metadata))
+        }
+        println("[CrashReporter] BREADCRUMB message=$message metadata=$metadata")
+    }
+
+    /** Removes all stored breadcrumbs. */
+    override fun clearBreadcrumbs() {
+        synchronized(breadcrumbs) {
+            breadcrumbs.clear()
+        }
+    }
+
+    /** Returns a snapshot of all stored breadcrumbs in chronological order (for inspection in tests). */
+    fun getBreadcrumbs(): List<Breadcrumb> =
+        synchronized(breadcrumbs) {
+            breadcrumbs.toList()
+        }
 }

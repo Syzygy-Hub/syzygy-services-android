@@ -4,7 +4,7 @@ import com.syzygy.services.persistence.SharedPreferencesStorageProvider
 import com.syzygyhub.foundation.contracts.storage.StorageKey
 import java.util.UUID
 
-private val DEVICE_ID_KEY = StorageKey<String>("device.id")
+private val DEVICE_ID_KEY = StorageKey<String>("syzygy.device.uuid")
 
 /**
  * Contract for accessing device-level metadata.

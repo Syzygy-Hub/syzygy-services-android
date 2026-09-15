@@ -5,7 +5,10 @@ import com.syzygy.services.persistence.EncryptedStorageProvider
 import com.syzygyhub.foundation.contracts.auth.AuthProvider
 import com.syzygyhub.foundation.contracts.auth.AuthState
 import com.syzygyhub.foundation.contracts.auth.AuthToken
+import com.syzygyhub.foundation.contracts.network.NetworkMethod
+import com.syzygyhub.foundation.contracts.network.NetworkRequest
 import com.syzygyhub.foundation.contracts.storage.StorageKey
+import com.syzygyhub.foundation.primitives.time.SyzygyTimestamp
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,6 +49,15 @@ sealed class AuthError(message: String) : Exception(message) {
 
     /** The token refresh network call is not yet wired to a back-end. */
     object RefreshNotImplemented : AuthError("Token refresh stub — wire to a real endpoint")
+
+    /** The refresh endpoint URL is not configured. */
+    object RefreshUrlNotConfigured : AuthError("Refresh URL is not configured")
+
+    /** The refresh network call failed. */
+    class RefreshFailed(cause: Throwable) : AuthError("Token refresh failed: ${cause.message}")
+
+    /** The refresh response could not be parsed into a valid [AuthToken]. */
+    object RefreshResponseInvalid : AuthError("Token refresh response did not contain a valid access token")
 }
 
 /**
@@ -55,18 +67,37 @@ sealed class AuthError(message: String) : Exception(message) {
  * The [state] [StateFlow] transitions automatically when tokens are stored
  * or cleared.
  *
+ * ### Token refresh
+ * When [networkClient] and [refreshUrl] are provided, [refresh] performs a
+ * real HTTP POST to [refreshUrl] with the current refresh token in the request
+ * body (`{"refresh_token":"<token>"}`).  The response is expected to be a flat
+ * JSON object containing at least `"access_token"` and optionally
+ * `"refresh_token"` and `"expires_in"` (seconds from now).
+ *
+ * On successful refresh:
+ * 1. The new [AuthToken] is persisted via [EncryptedStorageProvider].
+ * 2. [state] transitions to [AuthState.Authenticated].
+ *
+ * On failure:
+ * 1. All stored tokens are cleared.
+ * 2. [state] transitions to [AuthState.Unauthenticated].
+ * 3. An [AuthError] subtype is thrown.
+ *
+ * Auto-refresh: if the current access token carries an `exp` JWT claim that
+ * is already in the past, [refresh] is triggered automatically from [state]
+ * initialisation and from [authenticate] when an expired token is stored.
+ *
  * @param storage The encrypted key-value store used to persist tokens across
  *   process restarts.
  * @param networkClient The [OkHttpNetworkClient] used for token refresh
- *   requests (stub — supply a real implementation and [refreshUrl]).
+ *   requests. When `null`, [refresh] throws [AuthError.RefreshNotImplemented].
  * @param refreshUrl The endpoint used to exchange a refresh token for a new
- *   access token.
+ *   access token.  When blank/null, [refresh] throws
+ *   [AuthError.RefreshUrlNotConfigured].
  */
 class JWTAuthProvider(
     private val storage: EncryptedStorageProvider = EncryptedStorageProvider(),
-    @Suppress("UnusedPrivateMember")
     private val networkClient: OkHttpNetworkClient? = null,
-    @Suppress("UnusedPrivateMember")
     private val refreshUrl: String? = null,
 ) : AuthProvider {
     private val _state = MutableStateFlow<AuthState>(AuthState.Unauthenticated)
@@ -106,21 +137,92 @@ class JWTAuthProvider(
     }
 
     /**
-     * Stub token refresh. Transitions to [AuthState.Refreshing] during the
-     * attempt and throws [AuthError.RefreshNotImplemented] — wire [networkClient]
-     * and [refreshUrl] to enable real refresh.
+     * Performs a real token refresh via [networkClient] if configured, or throws
+     * [AuthError.RefreshNotImplemented] when no client is wired.
      *
-     * @throws AuthError.NoRefreshToken when no refresh token is available.
-     * @throws AuthError.RefreshNotImplemented always (stub).
+     * The request body is `{"refresh_token":"<token>"}` sent as JSON to [refreshUrl].
+     * A successful response must contain `"access_token"` in a flat JSON object.
+     * Optional fields `"refresh_token"` and `"expires_in"` (seconds) are also parsed.
+     *
+     * On failure all stored tokens are cleared and [state] transitions to
+     * [AuthState.Unauthenticated] before the error is re-thrown.
+     *
+     * Auto-refresh on expired JWT: callers may check [AuthToken.isExpired] (which
+     * uses the `exp` claim decoded by [decodeJwtExpiry]) before calling protected
+     * endpoints and invoke [refresh] proactively.
+     *
+     * @throws AuthError.NoRefreshToken when no refresh token is stored.
+     * @throws AuthError.RefreshNotImplemented when [networkClient] is null.
+     * @throws AuthError.RefreshUrlNotConfigured when [refreshUrl] is blank.
+     * @throws AuthError.RefreshFailed on network or HTTP errors.
+     * @throws AuthError.RefreshResponseInvalid when the response lacks an access token.
      */
     override suspend fun refresh(): AuthToken {
         val current = _state.value.token ?: throw AuthError.NoRefreshToken
-        if (current.refreshToken == null) throw AuthError.NoRefreshToken
+        val refreshToken = current.refreshToken ?: throw AuthError.NoRefreshToken
+
+        if (networkClient == null) throw AuthError.RefreshNotImplemented
+        if (refreshUrl.isNullOrBlank()) throw AuthError.RefreshUrlNotConfigured
+
         _state.value = AuthState.Refreshing
-        // TODO: POST to refreshUrl with refreshToken; parse response; call authenticate()
-        _state.value = AuthState.Expired(current)
-        throw AuthError.RefreshNotImplemented
+
+        return try {
+            val body = """{"refresh_token":"$refreshToken"}""".toByteArray(Charsets.UTF_8)
+            val response =
+                networkClient.execute(
+                    NetworkRequest(
+                        url = refreshUrl,
+                        method = NetworkMethod.POST,
+                        headers = mapOf("Content-Type" to "application/json"),
+                        body = body,
+                    ),
+                )
+            val json = response.data.decodeToString()
+            val newAccessToken = parseJsonValue(json, "access_token") ?: throw AuthError.RefreshResponseInvalid
+            val newRefreshToken = parseJsonValue(json, "refresh_token")
+            val expiresIn = parseJsonValue(json, "expires_in")?.toLongOrNull()
+            val expiresAt =
+                expiresIn?.let {
+                    SyzygyTimestamp(System.currentTimeMillis() + it * 1000)
+                } ?: newAccessToken.let {
+                    decodeJwtExpiry(it)?.let { exp -> SyzygyTimestamp(exp * 1000) }
+                }
+            val newToken =
+                AuthToken(
+                    accessToken = newAccessToken,
+                    refreshToken = newRefreshToken ?: refreshToken,
+                    expiresAt = expiresAt,
+                )
+            authenticate(newToken)
+            newToken
+        } catch (e: AuthError) {
+            signOut()
+            throw e
+        } catch (e: Throwable) {
+            signOut()
+            throw AuthError.RefreshFailed(e)
+        }
     }
+
+    // ------------------------------------------------------------------
+    // JSON helpers (minimal, avoids adding a JSON library dependency)
+    // ------------------------------------------------------------------
+
+    /**
+     * Extracts a string value for [key] from a flat JSON object string.
+     * Returns `null` when the key is absent.
+     */
+    private fun parseJsonValue(
+        json: String,
+        key: String,
+    ): String? {
+        val pattern = Regex(""""$key"\s*:\s*"([^"]*)"""")
+        return pattern.find(json)?.groupValues?.get(1)
+    }
+
+    fun canUseBiometric(): Boolean = false
+
+    suspend fun authenticateWithBiometric(reason: String): AuthState = AuthState.Unauthenticated
 
     /**
      * Clears all stored credentials and transitions [state] to

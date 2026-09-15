@@ -21,10 +21,12 @@ class ConsoleAnalyticsProvider : AnalyticsProvider {
      * A random UUID that identifies the current analytics session.
      *
      * A new session begins each time a [ConsoleAnalyticsProvider] is
-     * instantiated. Production implementations would persist the session ID
-     * across restarts or regenerate it after a period of inactivity.
+     * instantiated or [reset] is called. Production implementations would
+     * persist the session ID across restarts or regenerate it after a period
+     * of inactivity.
      */
-    val sessionId: String = UUID.randomUUID().toString()
+    var sessionId: String = UUID.randomUUID().toString()
+        private set
 
     /** In-memory user properties set via [identify]. */
     private val userProperties = ConcurrentHashMap<String, String>()
@@ -33,13 +35,15 @@ class ConsoleAnalyticsProvider : AnalyticsProvider {
     private var currentUserId: String? = null
 
     /**
-     * Prints [event] to standard output in a structured format.
+     * Prints [event] to standard output in a structured format, with [sessionId]
+     * injected into the event's metadata under `"session_id"`.
      *
      * @param event The [AnalyticsEvent] to record.
      */
     override fun track(event: AnalyticsEvent) {
+        val enrichedProps = event.properties + mapOf("session_id" to sessionId)
         println(
-            "[Analytics] event=${event.name} props=${event.properties} " +
+            "[Analytics] event=${event.name} props=$enrichedProps " +
                 "ts=${event.timestamp.millisecondsSinceEpoch} session=$sessionId",
         )
     }
@@ -61,11 +65,16 @@ class ConsoleAnalyticsProvider : AnalyticsProvider {
         println("[Analytics] identify userId=$userId traits=$traits session=$sessionId")
     }
 
-    /** Clears the current user identity and all stored user properties. */
+    /**
+     * Clears the current user identity and all stored user properties, and
+     * generates a fresh [sessionId] to begin a new analytics session.
+     */
     override fun reset() {
         currentUserId = null
         userProperties.clear()
-        println("[Analytics] reset session=$sessionId")
+        val oldSession = sessionId
+        sessionId = UUID.randomUUID().toString()
+        println("[Analytics] reset oldSession=$oldSession newSession=$sessionId")
     }
 
     /**
