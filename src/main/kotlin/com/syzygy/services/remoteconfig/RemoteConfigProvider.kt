@@ -69,15 +69,29 @@ interface RemoteConfigProvider {
  * to string values (e.g. `{"feature_flag":"true","timeout_seconds":"30"}`).
  * Type-coercion from strings is handled by each typed getter.
  *
+ * ### Cache TTL
+ * [cacheTtlSeconds] controls how long a successful fetch result is considered
+ * fresh.  When [fetch] is called and [lastFetchTime] is within [cacheTtlSeconds]
+ * seconds of the current time, the in-memory cache is returned immediately and
+ * no network request is made.  When the cache is empty (first call) or older
+ * than [cacheTtlSeconds], the remote endpoint is contacted.
+ *
  * @param networkClient The client used to perform the fetch request.
  * @param configUrl The URL of the remote configuration endpoint.
  * @param defaults Default values returned when a key is absent or the fetch
  *   has not yet succeeded.
+ * @param cacheTtlSeconds How many seconds a successful fetch result is
+ *   considered fresh before the next [fetch] call hits the network again.
+ *   Defaults to 3600 (one hour).
+ * @param clock Injectable time source used to determine cache freshness.
+ *   Defaults to [System.currentTimeMillis]. Override in tests to control time.
  */
 class NetworkRemoteConfigProvider(
     private val networkClient: NetworkClientProtocol? = null,
     private val configUrl: String = "",
     private val defaults: Map<String, String> = emptyMap(),
+    val cacheTtlSeconds: Long = 3600L,
+    private val clock: () -> Long = { System.currentTimeMillis() },
 ) : RemoteConfigProvider {
     private val store = ConcurrentHashMap<String, String>(defaults)
 
@@ -86,11 +100,25 @@ class NetworkRemoteConfigProvider(
         private set
 
     /**
-     * Fetches the remote configuration. On failure the existing (default)
-     * values are retained and [lastFetchTime] is not updated.
+     * Fetches the remote configuration unless the cache is still within [cacheTtlSeconds].
+     *
+     * - When [lastFetchTime] is `null` (no previous fetch) the network is always contacted.
+     * - When the time elapsed since [lastFetchTime] is less than [cacheTtlSeconds] seconds
+     *   the cached values are used and no network call is made.
+     * - On a successful network response [lastFetchTime] is updated.
+     * - On failure the existing (default) values are retained and [lastFetchTime] is
+     *   not updated.
      */
     override suspend fun fetch() {
         if (networkClient == null || configUrl.isBlank()) return
+
+        // Return cached result if within TTL
+        val lastFetch = lastFetchTime
+        if (lastFetch != null) {
+            val elapsedSeconds = (clock() - lastFetch.millisecondsSinceEpoch) / 1000L
+            if (elapsedSeconds < cacheTtlSeconds) return
+        }
+
         runCatching {
             val response =
                 networkClient!!.execute(
@@ -101,7 +129,7 @@ class NetworkRemoteConfigProvider(
                 )
             if (response.isSuccess) {
                 parseJsonFlat(response.data.decodeToString()).forEach { (k, v) -> store[k] = v }
-                lastFetchTime = SyzygyTimestamp.now()
+                lastFetchTime = SyzygyTimestamp(clock())
             }
         }
     }

@@ -1,5 +1,6 @@
 package com.syzygy.services.networking
 
+import com.syzygyhub.foundation.contracts.logging.LoggerProtocol
 import com.syzygyhub.foundation.contracts.network.NetworkClientProtocol
 import com.syzygyhub.foundation.contracts.network.NetworkMethod
 import com.syzygyhub.foundation.contracts.network.NetworkRequest
@@ -7,7 +8,6 @@ import com.syzygyhub.foundation.contracts.network.NetworkResponse
 import com.syzygyhub.foundation.errors.SyzygyError
 import com.syzygyhub.foundation.errors.SyzygyErrorCode
 import com.syzygyhub.foundation.errors.SyzygyErrorSeverity
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
@@ -121,7 +121,9 @@ class OkHttpNetworkClient(
     timeouts: TimeoutConfiguration = TimeoutConfiguration(),
     private val interceptors: List<RequestInterceptor> = emptyList(),
     private val maxRetries: Int = 3,
-) : NetworkClientProtocol {
+    private val logger: LoggerProtocol? = null,
+    private val backoffClock: BackoffClock = ExponentialBackoffClock(),
+) : NetworkClientProtocol, AutoCloseable {
     private val okHttpClient: OkHttpClient =
         OkHttpClient.Builder()
             .connectTimeout(timeouts.connectSeconds, TimeUnit.SECONDS)
@@ -129,33 +131,103 @@ class OkHttpNetworkClient(
             .writeTimeout(timeouts.writeSeconds, TimeUnit.SECONDS)
             .build()
 
+    /** Whether this client has been closed. */
+    @Volatile
+    private var closed = false
+
+    /**
+     * Releases the underlying [OkHttpClient] dispatcher and connection pool.
+     *
+     * After calling [close], any further [execute] call throws [IllegalStateException].
+     */
+    override fun close() {
+        closed = true
+        okHttpClient.dispatcher.executorService.shutdown()
+        okHttpClient.connectionPool.evictAll()
+    }
+
+    /**
+     * Alias for [close] — releases all resources held by this client.
+     *
+     * Provided for callers following the cross-platform Syzygy dispose convention.
+     *
+     * @see close
+     */
+    fun dispose() = close()
+
     /**
      * Executes [request] after passing it through all interceptors, retrying
      * on transport failures with exponential back-off.
      *
+     * @throws IllegalStateException when this client has been [close]d.
      * @throws NetworkError on HTTP 4xx/5xx or transport failure after all retries.
      */
     override suspend fun execute(request: NetworkRequest): NetworkResponse {
+        check(!closed) { "OkHttpNetworkClient has been closed" }
         val intercepted = interceptors.fold(request) { acc, interceptor -> interceptor.intercept(acc) }
+
+        // Log request (headers minus Authorization)
+        logger?.debug(
+            "NetworkClient request: ${intercepted.method.value} ${intercepted.url}",
+            buildMap {
+                put("method", intercepted.method.value)
+                put("url", intercepted.url)
+                put("body_size", (intercepted.body?.size ?: 0).toString())
+                intercepted.headers
+                    .filterKeys { it.lowercase() != "authorization" }
+                    .forEach { (k, v) -> put("header.$k", v) }
+            },
+        )
+
+        val startMs = System.currentTimeMillis()
         var lastError: Throwable? = null
         repeat(maxRetries) { attempt ->
             try {
-                return executeOnce(intercepted)
+                val response = executeOnce(intercepted)
+                val elapsedMs = System.currentTimeMillis() - startMs
+                logger?.debug(
+                    "NetworkClient response: ${response.statusCode} ${intercepted.url}",
+                    mapOf(
+                        "status_code" to response.statusCode.toString(),
+                        "elapsed_ms" to elapsedMs.toString(),
+                        "body_size" to response.data.size.toString(),
+                    ),
+                )
+                return response
             } catch (e: NetworkError) {
+                val elapsedMs = System.currentTimeMillis() - startMs
+                logger?.error(
+                    "NetworkClient error: ${e.code.rawValue} ${intercepted.url}",
+                    e,
+                    mapOf(
+                        "status_code" to e.code.rawValue,
+                        "elapsed_ms" to elapsedMs.toString(),
+                    ),
+                )
                 // Do not retry HTTP-level errors (4xx/5xx) — only transport errors
                 throw e
             } catch (e: Throwable) {
                 lastError = e
-                val backoffMs = (2.0.pow(attempt) * 500).toLong()
-                delay(backoffMs)
+                logger?.warning(
+                    "NetworkClient transport error (attempt ${attempt + 1}/$maxRetries): ${e.message}",
+                    mapOf("url" to intercepted.url, "attempt" to (attempt + 1).toString()),
+                )
+                backoffClock.delay(attempt)
             }
         }
-        throw NetworkError(
-            SyzygyErrorCode.networkUnavailable,
-            "Request failed after $maxRetries retries: ${lastError?.message}",
-            SyzygyErrorSeverity.ERROR,
-            lastError,
+        val finalError =
+            NetworkError(
+                SyzygyErrorCode.networkUnavailable,
+                "Request failed after $maxRetries retries: ${lastError?.message}",
+                SyzygyErrorSeverity.ERROR,
+                lastError,
+            )
+        logger?.error(
+            "NetworkClient gave up after $maxRetries retries: ${intercepted.url}",
+            finalError,
+            mapOf("url" to intercepted.url),
         )
+        throw finalError
     }
 
     /** Convenience wrapper for GET requests. */
@@ -244,11 +316,4 @@ class OkHttpNetworkClient(
                 },
             )
         }
-}
-
-/** Integer power helper to avoid kotlin-math dependency. */
-private fun Double.pow(exp: Int): Double {
-    var result = 1.0
-    repeat(exp) { result *= this }
-    return result
 }

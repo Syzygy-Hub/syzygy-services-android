@@ -87,4 +87,115 @@ class RemoteConfigProviderTest {
             assertEquals(5, provider.getInt("max_retries"))
             server.shutdown()
         }
+
+    // ------------------------------------------------------------------
+    // Cache TTL tests (ITEM 3)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `cacheTtlSeconds defaults to 3600`() {
+        val provider = NetworkRemoteConfigProvider()
+        assertEquals(3600L, provider.cacheTtlSeconds)
+    }
+
+    @Test
+    fun `fetch skips network call when cache is within TTL`() =
+        runTest {
+            val server = okhttp3.mockwebserver.MockWebServer()
+            server.start()
+            // First response seeds the cache
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"color":"blue"}"""),
+            )
+            var fakeNow = System.currentTimeMillis()
+            val client = com.syzygy.services.networking.OkHttpNetworkClient(maxRetries = 1)
+            val provider =
+                NetworkRemoteConfigProvider(
+                    networkClient = client,
+                    configUrl = server.url("/config").toString(),
+                    cacheTtlSeconds = 60L,
+                    clock = { fakeNow },
+                )
+
+            // First fetch — hits network
+            provider.fetch()
+            assertEquals(1, server.requestCount)
+            assertEquals("blue", provider.getString("color"))
+
+            // Advance time by 30 seconds (within TTL of 60s)
+            fakeNow += 30_000
+
+            // Second fetch — should use cache, not hit network
+            provider.fetch()
+            assertEquals(1, server.requestCount, "Should still be 1 request — cache is fresh")
+
+            server.shutdown()
+        }
+
+    @Test
+    fun `fetch hits network when cache is stale (beyond TTL)`() =
+        runTest {
+            val server = okhttp3.mockwebserver.MockWebServer()
+            server.start()
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"color":"red"}"""),
+            )
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"color":"green"}"""),
+            )
+            var fakeNow = System.currentTimeMillis()
+            val client = com.syzygy.services.networking.OkHttpNetworkClient(maxRetries = 1)
+            val provider =
+                NetworkRemoteConfigProvider(
+                    networkClient = client,
+                    configUrl = server.url("/config").toString(),
+                    cacheTtlSeconds = 60L,
+                    clock = { fakeNow },
+                )
+
+            // First fetch
+            provider.fetch()
+            assertEquals("red", provider.getString("color"))
+            assertEquals(1, server.requestCount)
+
+            // Advance 90 seconds — beyond the 60s TTL
+            fakeNow += 90_000
+
+            // Second fetch — cache is stale, must hit network
+            provider.fetch()
+            assertEquals(2, server.requestCount, "Should have made a second network request")
+            assertEquals("green", provider.getString("color"))
+
+            server.shutdown()
+        }
+
+    @Test
+    fun `fetch always hits network on first call when lastFetchTime is null`() =
+        runTest {
+            val server = okhttp3.mockwebserver.MockWebServer()
+            server.start()
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"k":"v"}"""),
+            )
+            val client = com.syzygy.services.networking.OkHttpNetworkClient(maxRetries = 1)
+            val provider =
+                NetworkRemoteConfigProvider(
+                    networkClient = client,
+                    configUrl = server.url("/config").toString(),
+                    cacheTtlSeconds = 3600L,
+                )
+            assertNull(provider.lastFetchTime)
+            provider.fetch()
+            assertNotNull(provider.lastFetchTime)
+            assertEquals(1, server.requestCount)
+            server.shutdown()
+        }
 }

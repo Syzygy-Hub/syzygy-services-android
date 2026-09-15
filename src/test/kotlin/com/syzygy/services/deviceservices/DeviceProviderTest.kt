@@ -1,5 +1,6 @@
 package com.syzygy.services.deviceservices
 
+import com.syzygy.services.persistence.SharedPreferencesStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -61,5 +62,41 @@ class DeviceProviderTest {
         val id2b = p2.deviceId
         assertEquals(id1a, id1b)
         assertEquals(id2a, id2b)
+    }
+
+    // ------------------------------------------------------------------
+    // ITEM 1 — Persistent UUID tests
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `deviceId is consistent across multiple calls on the same provider`() {
+        val provider = BuildDeviceProvider()
+        val ids = (1..5).map { provider.deviceId }
+        assertTrue(ids.all { it == ids[0] }, "deviceId must be identical across all calls")
+    }
+
+    @Test
+    fun `deviceId persists across re-instantiation when sharing the same storage`() {
+        val sharedStorage = SharedPreferencesStorageProvider()
+        val provider1 = BuildDeviceProvider(storage = sharedStorage)
+        val originalId = provider1.deviceId
+
+        // Re-instantiate with the same underlying storage — UUID must be the same
+        val provider2 = BuildDeviceProvider(storage = sharedStorage)
+        assertEquals(originalId, provider2.deviceId, "deviceId must be retrieved from storage, not regenerated")
+    }
+
+    @Test
+    fun `deviceId uses key syzygy-device-uuid`() {
+        val sharedStorage = SharedPreferencesStorageProvider()
+        val provider = BuildDeviceProvider(storage = sharedStorage)
+        val id = provider.deviceId
+
+        // The value must be readable from storage under the canonical key identifier
+        val stored =
+            sharedStorage.get(
+                com.syzygyhub.foundation.contracts.storage.StorageKey<String>("syzygy.device.uuid"),
+            ) { it }
+        assertEquals(id, stored, "deviceId must be stored under key 'syzygy.device.uuid'")
     }
 }

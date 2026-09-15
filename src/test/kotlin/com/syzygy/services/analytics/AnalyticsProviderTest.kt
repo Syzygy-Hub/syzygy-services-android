@@ -82,4 +82,33 @@ class AnalyticsProviderTest {
         assertEquals("gold", props["tier"])
         assertEquals("us", props["region"])
     }
+
+    // ------------------------------------------------------------------
+    // ITEM 4 — Session ID consistency tests
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `sessionId is present in initial state`() {
+        val provider = ConsoleAnalyticsProvider()
+        assertNotNull(provider.sessionId)
+        assertTrue(provider.sessionId.isNotEmpty())
+    }
+
+    @Test
+    fun `sessionId changes after reset()`() {
+        val provider = ConsoleAnalyticsProvider()
+        val beforeReset = provider.sessionId
+        provider.reset()
+        val afterReset = provider.sessionId
+        assertTrue(beforeReset != afterReset, "sessionId must change after reset()")
+    }
+
+    @Test
+    fun `sessionId remains stable between multiple tracks without reset`() {
+        val provider = ConsoleAnalyticsProvider()
+        val id1 = provider.sessionId
+        provider.track(AnalyticsEvent("e1", emptyMap()))
+        provider.track(AnalyticsEvent("e2", emptyMap()))
+        assertEquals(id1, provider.sessionId, "sessionId must not change between tracks")
+    }
 }

@@ -1,7 +1,8 @@
 package com.syzygy.services.websocket
 
+import com.syzygy.services.networking.BackoffClock
+import com.syzygy.services.networking.ExponentialBackoffClock
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import okhttp3.OkHttpClient
@@ -44,6 +45,15 @@ interface WebSocketProvider {
     val messages: Flow<String>
 
     /**
+     * A [Flow] of binary frames received from the server as raw [ByteArray]s.
+     *
+     * The flow remains active until [disconnect] is called.  Binary frames
+     * are not converted to strings — they are emitted here in their original
+     * byte form.
+     */
+    val binaryMessages: Flow<ByteArray>
+
+    /**
      * Opens a WebSocket connection to [url].
      *
      * Suspends until the connection is established. Reconnects automatically
@@ -78,6 +88,15 @@ interface WebSocketProvider {
      * [messages] will complete after this call returns.
      */
     fun disconnect()
+
+    /**
+     * Alias for [close] — releases all resources held by this provider.
+     *
+     * Prefer [close] when using the [AutoCloseable] / try-with-resources pattern.
+     * [dispose] is provided for callers following the cross-platform Syzygy
+     * dispose convention.
+     */
+    fun dispose()
 }
 
 /**
@@ -93,11 +112,17 @@ class OkHttpWebSocketProvider(
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(0, TimeUnit.SECONDS) // No read timeout for long-lived WS connections
             .build(),
-) : WebSocketProvider {
+    private val backoffClock: BackoffClock = ExponentialBackoffClock(),
+) : WebSocketProvider, AutoCloseable {
     private val stateRef = AtomicReference<WebSocketConnectionState>(WebSocketConnectionState.Disconnected())
     private val messageChannel = Channel<String>(Channel.UNLIMITED)
+    private val binaryChannel = Channel<ByteArray>(Channel.UNLIMITED)
     private var activeSocket: WebSocket? = null
     private var lastUrl: String = ""
+
+    /** Whether this provider has been closed via [close]. */
+    @Volatile
+    private var closed = false
 
     /** The current connection state. */
     override val connectionState: WebSocketConnectionState get() = stateRef.get()
@@ -106,12 +131,23 @@ class OkHttpWebSocketProvider(
     override val messages: Flow<String> = messageChannel.receiveAsFlow()
 
     /**
+     * Flow of binary frames received from the server.
+     *
+     * Frames arrive here as raw [ByteArray]s without any UTF-8 conversion,
+     * making it suitable for binary protocols (e.g. protobuf, MessagePack).
+     */
+    override val binaryMessages: Flow<ByteArray> = binaryChannel.receiveAsFlow()
+
+    /**
      * Connects to [url] with automatic reconnection on failure.
+     *
+     * @throws IllegalStateException when this provider has been [close]d.
      */
     override suspend fun connect(
         url: String,
         maxReconnectAttempts: Int,
     ) {
+        check(!closed) { "OkHttpWebSocketProvider has been closed" }
         lastUrl = url
         val attempt = AtomicInteger(0)
         while (true) {
@@ -125,8 +161,7 @@ class OkHttpWebSocketProvider(
                 stateRef.set(WebSocketConnectionState.Disconnected(result))
                 throw result
             }
-            val backoffMs = (2.0.pow(attempt.get()) * 500).toLong()
-            delay(backoffMs)
+            backoffClock.delay(attempt.get())
         }
     }
 
@@ -160,6 +195,9 @@ class OkHttpWebSocketProvider(
                     webSocket: WebSocket,
                     bytes: ByteString,
                 ) {
+                    // Emit on binaryMessages as raw bytes; also forward UTF-8
+                    // decoded text to the messages channel for backward compatibility.
+                    binaryChannel.trySend(bytes.toByteArray())
                     messageChannel.trySend(bytes.utf8())
                 }
 
@@ -216,12 +254,28 @@ class OkHttpWebSocketProvider(
         activeSocket = null
         stateRef.set(WebSocketConnectionState.Disconnected())
         messageChannel.close()
+        binaryChannel.close()
     }
-}
 
-/** Integer power helper. */
-private fun Double.pow(exp: Int): Double {
-    var result = 1.0
-    repeat(exp) { result *= this }
-    return result
+    /**
+     * Releases all resources held by this provider.
+     *
+     * Closes the active WebSocket connection, cancels the OkHttp dispatcher,
+     * and evicts all pooled connections. After [close] is called, any attempt
+     * to [connect], [sendText], or [sendBinary] will throw [IllegalStateException].
+     * [disconnect] remains safe to call on a closed provider (it becomes a no-op).
+     */
+    override fun close() {
+        closed = true
+        disconnect()
+        okHttpClient.dispatcher.executorService.shutdown()
+        okHttpClient.connectionPool.evictAll()
+    }
+
+    /**
+     * Alias for [close] — releases all resources held by this provider.
+     *
+     * @see close
+     */
+    override fun dispose() = close()
 }
