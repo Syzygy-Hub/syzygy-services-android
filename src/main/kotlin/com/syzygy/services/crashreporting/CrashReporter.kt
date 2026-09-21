@@ -199,7 +199,9 @@ class ConsoleCrashReporter : CrashReporter {
             }
             breadcrumbs.addLast(Breadcrumb(message, metadata))
         }
-        logger("[CrashReporter] BREADCRUMB message=$message metadata=${metadata?.let { RedactionPolicy.redactMap(it) }}")
+        logger(
+            "[CrashReporter] BREADCRUMB message=$message metadata=${metadata?.let { RedactionPolicy.redactMap(it) }}",
+        )
     }
 
     /** Removes all stored breadcrumbs. */
