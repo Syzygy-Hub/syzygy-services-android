@@ -7,5 +7,5 @@ typealias BackoffStrategy = BackoffClock
 @Deprecated("Use ExponentialBackoffClock", ReplaceWith("ExponentialBackoffClock"))
 typealias ExponentialBackoffStrategy = ExponentialBackoffClock
 
-@Deprecated("Use TestBackoffClock", ReplaceWith("TestBackoffClock"))
-typealias TestBackoffStrategy = TestBackoffClock
+// TestBackoffStrategy alias removed — TestBackoffClock is now test-only (src/test).
+// Use com.syzygy.services.networking.TestBackoffClock in test sources directly.

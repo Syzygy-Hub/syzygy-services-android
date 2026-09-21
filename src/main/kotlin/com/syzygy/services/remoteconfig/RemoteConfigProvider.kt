@@ -1,5 +1,6 @@
 package com.syzygy.services.remoteconfig
 
+import com.syzygyhub.foundation.contracts.logging.LoggerProtocol
 import com.syzygyhub.foundation.contracts.network.NetworkClientProtocol
 import com.syzygyhub.foundation.contracts.network.NetworkMethod
 import com.syzygyhub.foundation.contracts.network.NetworkRequest
@@ -85,6 +86,8 @@ interface RemoteConfigProvider {
  *   Defaults to 3600 (one hour).
  * @param clock Injectable time source used to determine cache freshness.
  *   Defaults to [System.currentTimeMillis]. Override in tests to control time.
+ * @param logger Optional logger for fetch failures and recoveries. When provided,
+ *   a warn-level entry is emitted on fetch failure and an info-level entry on recovery.
  */
 class NetworkRemoteConfigProvider(
     private val networkClient: NetworkClientProtocol? = null,
@@ -92,6 +95,7 @@ class NetworkRemoteConfigProvider(
     private val defaults: Map<String, String> = emptyMap(),
     val cacheTtlSeconds: Long = 3600L,
     private val clock: () -> Long = { System.currentTimeMillis() },
+    private val logger: LoggerProtocol? = null,
 ) : RemoteConfigProvider {
     private val store = ConcurrentHashMap<String, String>(defaults)
 
@@ -119,6 +123,7 @@ class NetworkRemoteConfigProvider(
             if (elapsedSeconds < cacheTtlSeconds) return
         }
 
+        val previousFetchTime = lastFetchTime
         runCatching {
             val response =
                 networkClient!!.execute(
@@ -130,7 +135,20 @@ class NetworkRemoteConfigProvider(
             if (response.isSuccess) {
                 parseJsonFlat(response.data.decodeToString()).forEach { (k, v) -> store[k] = v }
                 lastFetchTime = SyzygyTimestamp(clock())
+                if (previousFetchTime == null) {
+                    logger?.info("RemoteConfigProvider: fetch recovered — config loaded from $configUrl")
+                }
+            } else {
+                logger?.warning(
+                    "RemoteConfigProvider: fetch failed — HTTP ${response.statusCode} from $configUrl",
+                    mapOf("status_code" to response.statusCode.toString(), "url" to configUrl),
+                )
             }
+        }.onFailure { cause ->
+            logger?.warning(
+                "RemoteConfigProvider: fetch failed — ${cause.message}",
+                mapOf("url" to configUrl, "reason" to (cause.message ?: "unknown")),
+            )
         }
     }
 

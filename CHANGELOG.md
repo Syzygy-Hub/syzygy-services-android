@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-19
+
+### Fixed
+- `WebSocketProvider`: channels recreated on `connect()` — fixes non-functional channels after disconnect
+- `WebSocketProvider`: `activeSocket` changed to `AtomicReference` — eliminates data race on concurrent access
+- `ContractComplianceTest`: redundant `is` check removed — compiler warning eliminated
+- Biometric KDoc comments added to stub methods
+
+### Changed
+- `TestBackoffClock` moved to test source — no longer ships in production artifact
+- `DeviceProvider`: UUID falls back to exception on storage failure — no more silent in-memory fallback
+- Foundation declared as `api` dependency — consumers no longer need separate Foundation declaration
+- `RemoteConfigProvider`: logs warn on fetch failure, info on recovery
+- PII redaction via `RedactionPolicy` — sensitive keys redacted at sink
+- Canonical backoff policy: 500ms base, 2.0× multiplier, full jitter, 8 000ms cap, max 3 retries
+- Foundation dependency updated to 1.2.0
+
 ## [1.1.0] - 2026-09-13
 
 ### Added
@@ -56,5 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CrashReporter interface and console crash logging stub
 - WebSocketProvider interface and OkHttp-style WebSocket stub
 
-[1.1.0]: https://github.com/Syzygy-Hub/syzygy-services-android/releases/tag/1.1.0
+[1.2.0]: https://github.com/Syzygy-Hub/syzygy-services-android/compare/1.1.0...1.2.0
+[1.1.0]: https://github.com/Syzygy-Hub/syzygy-services-android/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/Syzygy-Hub/syzygy-services-android/releases/tag/1.0.0

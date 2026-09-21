@@ -4,6 +4,9 @@ import com.syzygyhub.foundation.contracts.logging.LogEntry
 import com.syzygyhub.foundation.contracts.logging.LoggerProtocol
 import com.syzygyhub.foundation.contracts.network.NetworkRequest
 import com.syzygyhub.foundation.contracts.network.NetworkResponse
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -218,4 +221,30 @@ class NetworkClientTest {
         client.dispose()
         client.dispose() // should not throw
     }
+
+    // ------------------------------------------------------------------
+    // MED-10: Concurrency tests — 10 concurrent execute() calls
+    // ------------------------------------------------------------------
+
+    /**
+     * Verifies that 10 concurrent coroutines calling execute() all complete
+     * without exception when the server responds successfully to each request.
+     */
+    @Test
+    fun `10 concurrent execute calls all complete without exception`() =
+        runBlocking {
+            repeat(10) {
+                server.enqueue(MockResponse().setResponseCode(200).setBody("concurrent-ok"))
+            }
+            val concurrentClient = OkHttpNetworkClient(maxRetries = 1)
+            val results =
+                (1..10)
+                    .map {
+                        async {
+                            concurrentClient.get(server.url("/concurrent").toString())
+                        }
+                    }.awaitAll()
+            assertTrue(results.all { it.isSuccess }, "All 10 concurrent responses should be successful")
+            assertTrue(results.size == 10, "All 10 requests must complete")
+        }
 }

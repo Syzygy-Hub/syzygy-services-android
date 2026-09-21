@@ -1,5 +1,6 @@
 package com.syzygy.services.crashreporting
 
+import com.syzygy.services.internal.RedactionPolicy
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -112,6 +113,9 @@ class ConsoleCrashReporter : CrashReporter {
     /** Circular buffer holding the last [MAX_BREADCRUMBS] breadcrumbs. */
     private val breadcrumbs = ArrayDeque<Breadcrumb>(MAX_BREADCRUMBS)
 
+    /** Output sink — defaults to [println]. Override in tests to capture log lines. */
+    internal var logger: (String) -> Unit = ::println
+
     companion object {
         /** Maximum number of breadcrumbs retained at any time. */
         const val MAX_BREADCRUMBS = 20
@@ -127,9 +131,10 @@ class ConsoleCrashReporter : CrashReporter {
         val cls = error::class.simpleName
         val msg = error.message
         val crumbs = getBreadcrumbs()
-        println(
-            "[CrashReporter] NON_FATAL error=$cls message=$msg metadata=$metadata " +
-                "user=$userId keys=$customKeys breadcrumbs=$crumbs",
+        val redactedUser = userId?.let { RedactionPolicy.redact("userId", it) }
+        logger(
+            "[CrashReporter] NON_FATAL error=$cls message=$msg metadata=${RedactionPolicy.redactMap(metadata)} " +
+                "user=$redactedUser keys=${RedactionPolicy.redactMap(customKeys)} breadcrumbs=$crumbs",
         )
     }
 
@@ -143,9 +148,10 @@ class ConsoleCrashReporter : CrashReporter {
         metadata: Map<String, String>,
     ) {
         val crumbs = getBreadcrumbs()
-        println(
-            "[CrashReporter] FATAL message=$message metadata=$metadata " +
-                "user=$userId keys=$customKeys breadcrumbs=$crumbs",
+        val redactedUser = userId?.let { RedactionPolicy.redact("userId", it) }
+        logger(
+            "[CrashReporter] FATAL message=$message metadata=${RedactionPolicy.redactMap(metadata)} " +
+                "user=$redactedUser keys=${RedactionPolicy.redactMap(customKeys)} breadcrumbs=$crumbs",
         )
     }
 
@@ -193,7 +199,9 @@ class ConsoleCrashReporter : CrashReporter {
             }
             breadcrumbs.addLast(Breadcrumb(message, metadata))
         }
-        println("[CrashReporter] BREADCRUMB message=$message metadata=$metadata")
+        logger(
+            "[CrashReporter] BREADCRUMB message=$message metadata=${metadata?.let { RedactionPolicy.redactMap(it) }}",
+        )
     }
 
     /** Removes all stored breadcrumbs. */

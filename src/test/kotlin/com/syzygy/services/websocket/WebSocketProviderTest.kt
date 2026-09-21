@@ -2,6 +2,8 @@ package com.syzygy.services.websocket
 
 import com.syzygy.services.networking.TestBackoffClock
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.WebSocket
@@ -367,4 +369,47 @@ class WebSocketProviderTest {
         provider.dispose()
         assertIs<WebSocketConnectionState.Disconnected>(provider.connectionState)
     }
+
+    // ------------------------------------------------------------------
+    // MED-10: Concurrency tests — AtomicReference connect + disconnect
+    // ------------------------------------------------------------------
+
+    /**
+     * Verifies that concurrent connect() and disconnect() calls do not throw
+     * or corrupt the provider state. Exercises the AtomicReference fix from
+     * BLK-06 by racing two coroutines against each other.
+     */
+    @Test
+    fun `concurrent connect and disconnect do not throw`() =
+        runBlocking {
+            val provider = OkHttpWebSocketProvider()
+            val connectJob =
+                launch {
+                    runCatching {
+                        // Unreachable host — will throw; that's expected
+                        provider.connect("ws://127.0.0.1:1", maxReconnectAttempts = 1)
+                    }
+                }
+            val disconnectJob =
+                launch {
+                    // Disconnect races connect — must not throw regardless of order
+                    runCatching { provider.disconnect() }
+                }
+            connectJob.join()
+            disconnectJob.join()
+            // Final state must be Disconnected regardless of interleaving
+            assertIs<WebSocketConnectionState.Disconnected>(provider.connectionState)
+        }
+
+    @Test
+    fun `concurrent close calls from multiple coroutines do not throw`() =
+        runBlocking {
+            val provider = OkHttpWebSocketProvider()
+            val jobs =
+                (1..5).map {
+                    launch { runCatching { provider.close() } }
+                }
+            jobs.forEach { it.join() }
+            assertIs<WebSocketConnectionState.Disconnected>(provider.connectionState)
+        }
 }

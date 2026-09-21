@@ -128,4 +128,22 @@ class CrashReporterTest {
         val reporter = ConsoleCrashReporter()
         assertTrue(reporter.getBreadcrumbs().isEmpty())
     }
+
+    // ------------------------------------------------------------------
+    // HI-06 — PII redaction tests
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `recordError does not log userId in plain text`() {
+        val reporter = ConsoleCrashReporter()
+        val captured = mutableListOf<String>()
+        reporter.logger = { captured.add(it) }
+
+        reporter.setUserContext("test@example.com", "test@example.com")
+        reporter.recordError(RuntimeException("boom"))
+
+        val output = captured.joinToString()
+        assertTrue("test@example.com" !in output, "Plain-text PII must not appear in log output")
+        assertTrue("<redacted>" in output, "Redaction sentinel must appear in log output")
+    }
 }

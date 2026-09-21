@@ -67,14 +67,24 @@ class BuildDeviceProvider(
     /**
      * Reads or generates a stable device UUID, persisting it so that the
      * same ID is returned on subsequent calls.
+     *
+     * @throws Exception if the underlying storage cannot be read or written.
+     * Do not fall back to an in-memory UUID — a UUID that changes per process
+     * breaks server-side device deduplication. Surface the error instead.
      */
     override val deviceId: String
         get() {
             val existing = storage.get(DEVICE_ID_KEY) { it }
             if (existing != null) return existing
             val newId = UUID.randomUUID().toString()
+            // Do not fall back to in-memory UUID — a UUID that changes per process
+            // breaks server-side device deduplication. Surface the error instead.
             storage.set(newId, DEVICE_ID_KEY) { it }
-            return newId
+            return storage.get(DEVICE_ID_KEY) { it }
+                ?: throw IllegalStateException(
+                    "DeviceProvider: failed to persist device UUID to storage. " +
+                        "Cannot return an in-memory fallback — callers must handle this exception.",
+                )
         }
 
     /** Always `"android"` on Android targets; `"jvm"` in pure JVM environments. */
