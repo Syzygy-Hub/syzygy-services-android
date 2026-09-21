@@ -69,7 +69,7 @@ plugins {
 }
 
 // Single canonical version source — bump only this value on each release.
-val syzygyVersion = "1.1.0"
+val syzygyVersion = "1.2.0"
 
 group = "com.github.Syzygy-Hub"
 version = syzygyVersion
@@ -85,8 +85,9 @@ sourceSets {
 }
 
 dependencies {
-    // Syzygy Foundation
-    implementation("com.github.Syzygy-Hub:syzygy-foundation-android:1.1.0")
+    // Syzygy Foundation — api() so consumers inherit Foundation types (e.g. StorageKey,
+    // AuthState) without re-declaring the dependency. Changed from implementation() per MED-06.
+    api("com.github.Syzygy-Hub:syzygy-foundation-android:1.2.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")

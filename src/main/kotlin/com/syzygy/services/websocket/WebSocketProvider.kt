@@ -115,9 +115,9 @@ class OkHttpWebSocketProvider(
     private val backoffClock: BackoffClock = ExponentialBackoffClock(),
 ) : WebSocketProvider, AutoCloseable {
     private val stateRef = AtomicReference<WebSocketConnectionState>(WebSocketConnectionState.Disconnected())
-    private val messageChannel = Channel<String>(Channel.UNLIMITED)
-    private val binaryChannel = Channel<ByteArray>(Channel.UNLIMITED)
-    private var activeSocket: WebSocket? = null
+    private var messageChannel = Channel<String>(Channel.UNLIMITED)
+    private var binaryChannel = Channel<ByteArray>(Channel.UNLIMITED)
+    private val activeSocket = AtomicReference<WebSocket?>(null)
     private var lastUrl: String = ""
 
     /** Whether this provider has been closed via [close]. */
@@ -128,7 +128,7 @@ class OkHttpWebSocketProvider(
     override val connectionState: WebSocketConnectionState get() = stateRef.get()
 
     /** Flow of text messages received from the server. */
-    override val messages: Flow<String> = messageChannel.receiveAsFlow()
+    override val messages: Flow<String> get() = messageChannel.receiveAsFlow()
 
     /**
      * Flow of binary frames received from the server.
@@ -136,7 +136,7 @@ class OkHttpWebSocketProvider(
      * Frames arrive here as raw [ByteArray]s without any UTF-8 conversion,
      * making it suitable for binary protocols (e.g. protobuf, MessagePack).
      */
-    override val binaryMessages: Flow<ByteArray> = binaryChannel.receiveAsFlow()
+    override val binaryMessages: Flow<ByteArray> get() = binaryChannel.receiveAsFlow()
 
     /**
      * Connects to [url] with automatic reconnection on failure.
@@ -148,6 +148,8 @@ class OkHttpWebSocketProvider(
         maxReconnectAttempts: Int,
     ) {
         check(!closed) { "OkHttpWebSocketProvider has been closed" }
+        messageChannel = Channel(Channel.UNLIMITED)
+        binaryChannel = Channel(Channel.UNLIMITED)
         lastUrl = url
         val attempt = AtomicInteger(0)
         while (true) {
@@ -179,7 +181,7 @@ class OkHttpWebSocketProvider(
                     webSocket: WebSocket,
                     response: Response,
                 ) {
-                    activeSocket = webSocket
+                    activeSocket.set(webSocket)
                     stateRef.set(WebSocketConnectionState.Connected)
                     connected.trySend(null)
                 }
@@ -228,7 +230,7 @@ class OkHttpWebSocketProvider(
      * @throws IllegalStateException when not connected.
      */
     override suspend fun sendText(message: String) {
-        val socket = activeSocket
+        val socket = activeSocket.get()
         check(socket != null && stateRef.get() is WebSocketConnectionState.Connected) {
             "Cannot send: WebSocket is not connected"
         }
@@ -241,7 +243,7 @@ class OkHttpWebSocketProvider(
      * @throws IllegalStateException when not connected.
      */
     override suspend fun sendBinary(data: ByteArray) {
-        val socket = activeSocket
+        val socket = activeSocket.get()
         check(socket != null && stateRef.get() is WebSocketConnectionState.Connected) {
             "Cannot send binary: WebSocket is not connected"
         }
@@ -250,8 +252,10 @@ class OkHttpWebSocketProvider(
 
     /** Closes the active WebSocket connection gracefully. */
     override fun disconnect() {
-        activeSocket?.close(1000, "Client disconnect")
-        activeSocket = null
+        val currentSocket = activeSocket.get()
+        if (currentSocket != null && activeSocket.compareAndSet(currentSocket, null)) {
+            currentSocket.close(1000, "Client disconnect")
+        }
         stateRef.set(WebSocketConnectionState.Disconnected())
         messageChannel.close()
         binaryChannel.close()

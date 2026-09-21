@@ -1,11 +1,22 @@
 package com.syzygy.services.remoteconfig
 
+import com.syzygyhub.foundation.contracts.logging.LogEntry
+import com.syzygyhub.foundation.contracts.logging.LoggerProtocol
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+
+/** Spy logger that accumulates all log entries for assertion. */
+private class SpyLogger : LoggerProtocol {
+    val entries = mutableListOf<LogEntry>()
+
+    override fun log(entry: LogEntry) {
+        entries.add(entry)
+    }
+}
 
 class RemoteConfigProviderTest {
     @Test
@@ -172,6 +183,61 @@ class RemoteConfigProviderTest {
             assertEquals(2, server.requestCount, "Should have made a second network request")
             assertEquals("green", provider.getString("color"))
 
+            server.shutdown()
+        }
+
+    // ------------------------------------------------------------------
+    // MED-09: Logger spy tests
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `logger warning is emitted on fetch failure`() =
+        runTest {
+            val server = okhttp3.mockwebserver.MockWebServer()
+            server.start()
+            // Return a non-success status to trigger the warning path
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse().setResponseCode(503).setBody("unavailable"),
+            )
+            val spy = SpyLogger()
+            val client = com.syzygy.services.networking.OkHttpNetworkClient(maxRetries = 1)
+            val provider =
+                NetworkRemoteConfigProvider(
+                    networkClient = client,
+                    configUrl = server.url("/config").toString(),
+                    logger = spy,
+                )
+            provider.fetch()
+            assertTrue(
+                spy.entries.any { it.message.contains("fetch failed") },
+                "Logger should have recorded a warning on fetch failure",
+            )
+            server.shutdown()
+        }
+
+    @Test
+    fun `no logger entries when fetch succeeds`() =
+        runTest {
+            val server = okhttp3.mockwebserver.MockWebServer()
+            server.start()
+            server.enqueue(
+                okhttp3.mockwebserver.MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"key":"value"}"""),
+            )
+            val spy = SpyLogger()
+            val client = com.syzygy.services.networking.OkHttpNetworkClient(maxRetries = 1)
+            val provider =
+                NetworkRemoteConfigProvider(
+                    networkClient = client,
+                    configUrl = server.url("/config").toString(),
+                    logger = spy,
+                )
+            provider.fetch()
+            assertTrue(
+                spy.entries.none { it.message.contains("fetch failed") },
+                "No warning should be logged on successful fetch",
+            )
             server.shutdown()
         }
 

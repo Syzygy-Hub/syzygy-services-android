@@ -111,4 +111,21 @@ class AnalyticsProviderTest {
         provider.track(AnalyticsEvent("e2", emptyMap()))
         assertEquals(id1, provider.sessionId, "sessionId must not change between tracks")
     }
+
+    // ------------------------------------------------------------------
+    // HI-06 — PII redaction tests
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `identify does not log userId in plain text`() {
+        val provider = ConsoleAnalyticsProvider()
+        val captured = mutableListOf<String>()
+        provider.logger = { captured.add(it) }
+
+        provider.identify("test@example.com", mapOf("email" to "test@example.com"))
+
+        val output = captured.joinToString()
+        assertTrue("test@example.com" !in output, "Plain-text PII must not appear in log output")
+        assertTrue("<redacted>" in output, "Redaction sentinel must appear in log output")
+    }
 }

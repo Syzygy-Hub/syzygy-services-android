@@ -220,8 +220,19 @@ class JWTAuthProvider(
         return pattern.find(json)?.groupValues?.get(1)
     }
 
+    /**
+     * Returns whether biometric authentication is available on this device.
+     * This is a stub implementation that always returns false.
+     * TODO(Foundation-v1.2.0): replace with real BiometricPrompt integration.
+     */
     fun canUseBiometric(): Boolean = false
 
+    /**
+     * Attempts biometric authentication with the given [reason] string shown
+     * to the user in the system prompt.
+     * This is a stub implementation that always returns [AuthState.Unauthenticated].
+     * TODO(Foundation-v1.2.0): replace with real BiometricPrompt integration.
+     */
     suspend fun authenticateWithBiometric(reason: String): AuthState = AuthState.Unauthenticated
 
     /**

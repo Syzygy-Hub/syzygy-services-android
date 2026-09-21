@@ -1,5 +1,6 @@
 package com.syzygy.services.analytics
 
+import com.syzygy.services.internal.RedactionPolicy
 import com.syzygyhub.foundation.contracts.analytics.AnalyticsEvent
 import com.syzygyhub.foundation.contracts.analytics.AnalyticsProvider
 import java.util.UUID
@@ -34,6 +35,9 @@ class ConsoleAnalyticsProvider : AnalyticsProvider {
     /** The user ID associated with the current session, or `null`. */
     private var currentUserId: String? = null
 
+    /** Output sink — defaults to [println]. Override in tests to capture log lines. */
+    internal var logger: (String) -> Unit = ::println
+
     /**
      * Prints [event] to standard output in a structured format, with [sessionId]
      * injected into the event's metadata under `"session_id"`.
@@ -42,7 +46,7 @@ class ConsoleAnalyticsProvider : AnalyticsProvider {
      */
     override fun track(event: AnalyticsEvent) {
         val enrichedProps = event.properties + mapOf("session_id" to sessionId)
-        println(
+        logger(
             "[Analytics] event=${event.name} props=$enrichedProps " +
                 "ts=${event.timestamp.millisecondsSinceEpoch} session=$sessionId",
         )
@@ -62,7 +66,9 @@ class ConsoleAnalyticsProvider : AnalyticsProvider {
         currentUserId = userId
         userProperties.clear()
         userProperties.putAll(traits)
-        println("[Analytics] identify userId=$userId traits=$traits session=$sessionId")
+        val redactedUserId = RedactionPolicy.redact("userId", userId)
+        val redactedTraits = RedactionPolicy.redactMap(traits)
+        logger("[Analytics] identify userId=$redactedUserId traits=$redactedTraits session=$sessionId")
     }
 
     /**
@@ -74,7 +80,7 @@ class ConsoleAnalyticsProvider : AnalyticsProvider {
         userProperties.clear()
         val oldSession = sessionId
         sessionId = UUID.randomUUID().toString()
-        println("[Analytics] reset oldSession=$oldSession newSession=$sessionId")
+        logger("[Analytics] reset oldSession=$oldSession newSession=$sessionId")
     }
 
     /**

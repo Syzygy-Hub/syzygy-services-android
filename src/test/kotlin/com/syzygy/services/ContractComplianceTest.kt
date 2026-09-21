@@ -83,7 +83,8 @@ class ContractComplianceTest {
         val result: String? = provider.get(key) { it }
         // The result may be null or a String — both are valid; the important thing
         // is that the method compiles and runs without throwing.
-        assertTrue(result == null || result is String)
+        // (result is typed as String? so no is-check needed — null-check is sufficient)
+        assertTrue(result == null || result.isNotEmpty() || result.isEmpty())
     }
 
     @Test
