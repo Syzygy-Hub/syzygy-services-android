@@ -250,6 +250,38 @@ class AuthProviderTest {
         }
 
     // ------------------------------------------------------------------
+    // Change 8a — initial Expired state when stored token is already expired
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `initial state is Expired when stored token is already expired on init`() {
+        val storage = com.syzygy.services.persistence.EncryptedStorageProvider()
+        val expiredTime = SyzygyTimestamp(System.currentTimeMillis() - 60_000)
+        val token = AuthToken("expired-tok", expiresAt = expiredTime)
+        // Pre-populate storage to simulate a persisted expired token
+        val provider1 = JWTAuthProvider(storage = storage)
+        provider1.authenticate(token)
+        // Create a new provider backed by the same storage — it should restore as Expired
+        val provider2 = JWTAuthProvider(storage = storage)
+        assertIs<AuthState.Expired>(provider2.state.value)
+    }
+
+    // ------------------------------------------------------------------
+    // Change 8d — signOut() when already signed out does not throw
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `signOut when already signed out does not throw and remains unauthenticated`() {
+        val provider = JWTAuthProvider()
+        // Provider starts unauthenticated — calling signOut should be a no-op
+        provider.signOut()
+        assertIs<AuthState.Unauthenticated>(provider.state.value)
+        // Calling it a second time should also not throw
+        provider.signOut()
+        assertIs<AuthState.Unauthenticated>(provider.state.value)
+    }
+
+    // ------------------------------------------------------------------
     // Biometric stub tests (ITEM 5)
     // ------------------------------------------------------------------
 
@@ -264,6 +296,6 @@ class AuthProviderTest {
         runTest {
             val provider = JWTAuthProvider()
             val result = provider.authenticateWithBiometric("test reason")
-            assertIs<AuthState.Unauthenticated>(result)
+            assertEquals(false, result)
         }
 }

@@ -2,6 +2,7 @@ package com.syzygy.services.networking
 
 import com.syzygyhub.foundation.contracts.logging.LogEntry
 import com.syzygyhub.foundation.contracts.logging.LoggerProtocol
+import com.syzygyhub.foundation.contracts.network.NetworkMethod
 import com.syzygyhub.foundation.contracts.network.NetworkRequest
 import com.syzygyhub.foundation.contracts.network.NetworkResponse
 import kotlinx.coroutines.async
@@ -176,6 +177,30 @@ class NetworkClientTest {
             }
             assertTrue(logger.entries.isNotEmpty())
             assertTrue(logger.entries.any { it.error != null || it.message.contains("error") })
+        }
+
+    // ------------------------------------------------------------------
+    // Change 8b — PATCH convenience method sends correct HTTP method and body
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `PATCH sends correct HTTP method and body`() =
+        runTest {
+            server.enqueue(MockResponse().setResponseCode(200).setBody("patched"))
+            val body = """{"field":"value"}""".toByteArray()
+            val response =
+                client.execute(
+                    NetworkRequest(
+                        url = server.url("/items/1").toString(),
+                        method = NetworkMethod.PATCH,
+                        body = body,
+                        headers = mapOf("Content-Type" to "application/json"),
+                    ),
+                )
+            assertEquals(200, response.statusCode)
+            val recorded = server.takeRequest()
+            assertEquals("PATCH", recorded.method)
+            assertEquals("""{"field":"value"}""", recorded.body.readUtf8())
         }
 
     @Test

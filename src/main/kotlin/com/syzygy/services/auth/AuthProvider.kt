@@ -223,17 +223,31 @@ class JWTAuthProvider(
     /**
      * Returns whether biometric authentication is available on this device.
      * This is a stub implementation that always returns false.
-     * TODO(Foundation-v1.2.0): replace with real BiometricPrompt integration.
+     * TODO(Foundation-future): biometric implementation pending Foundation adding native biometric support
      */
-    fun canUseBiometric(): Boolean = false
+    override fun canUseBiometric(): Boolean = false
 
     /**
      * Attempts biometric authentication with the given [reason] string shown
      * to the user in the system prompt.
-     * This is a stub implementation that always returns [AuthState.Unauthenticated].
-     * TODO(Foundation-v1.2.0): replace with real BiometricPrompt integration.
+     * This is a stub implementation that always returns false.
+     * TODO(Foundation-future): biometric implementation pending Foundation adding native biometric support
      */
-    suspend fun authenticateWithBiometric(reason: String): AuthState = AuthState.Unauthenticated
+    override suspend fun authenticateWithBiometric(reason: String): Boolean = false
+
+    /**
+     * Attempts to refresh the current token if expired.
+     * Returns true if a valid token is available after the call, false otherwise.
+     * TODO(Foundation-future): wire to real biometric/token-refresh flow
+     */
+    override suspend fun refreshToken(): Boolean {
+        return try {
+            refresh()
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
 
     /**
      * Clears all stored credentials and transitions [state] to
