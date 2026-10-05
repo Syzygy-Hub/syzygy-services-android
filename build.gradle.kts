@@ -58,7 +58,7 @@
  *    The `maven-publish` block will need to reference the `release` component
  *    (`from(components["release"])`) rather than `components["java"]`.
  *
- * Migration target: **v1.2.0** — see CHANGELOG for tracking.
+ * AGP migration deferred — tracked in backlog.
  * ============================================================================
  */
 
@@ -69,7 +69,7 @@ plugins {
 }
 
 // Single canonical version source — bump only this value on each release.
-val syzygyVersion = "1.2.0"
+val syzygyVersion = "3.0.0"
 
 group = "com.github.Syzygy-Hub"
 version = syzygyVersion
@@ -87,7 +87,7 @@ sourceSets {
 dependencies {
     // Syzygy Foundation — api() so consumers inherit Foundation types (e.g. StorageKey,
     // AuthState) without re-declaring the dependency. Changed from implementation() per MED-06.
-    api("com.github.Syzygy-Hub:syzygy-foundation-android:1.2.0")
+    api("com.github.Syzygy-Hub:syzygy-foundation-android:3.0.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")

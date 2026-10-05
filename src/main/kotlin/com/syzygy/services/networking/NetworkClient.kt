@@ -153,7 +153,7 @@ class OkHttpNetworkClient(
      *
      * @see close
      */
-    fun dispose() = close()
+    override fun dispose() = close()
 
     /**
      * Executes [request] after passing it through all interceptors, retrying

@@ -52,4 +52,44 @@ class PushProviderTest {
         assertNull(payload.body)
         assertTrue(payload.data.isEmpty())
     }
+
+    // ------------------------------------------------------------------
+    // Change 8c — contract tests for StubPushProvider and NotificationPayload DSL
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `register does not throw`() {
+        val provider = StubPushProvider()
+        provider.registerToken("device-token-xyz") // must not throw
+        assertEquals("device-token-xyz", provider.deviceToken)
+    }
+
+    @Test
+    fun `handlePayload returns NotificationPayload with correct title and body`() {
+        val provider = StubPushProvider()
+        val payload = provider.handlePayload("title=Test Alert,body=Something happened")
+        assertEquals("Test Alert", payload.title)
+        assertEquals("Something happened", payload.body)
+    }
+
+    @Test
+    fun `NotificationPayload build DSL creates correct payload`() {
+        val payload =
+            NotificationPayload.build(title = "Hello", body = "World") {
+                data("action", "open_screen")
+                data("screen", "home")
+            }
+        assertEquals("Hello", payload.title)
+        assertEquals("World", payload.body)
+        assertEquals("open_screen", payload.data["action"])
+        assertEquals("home", payload.data["screen"])
+    }
+
+    @Test
+    fun `NotificationPayload build DSL with no data block creates minimal payload`() {
+        val payload = NotificationPayload.build(title = "Alert", body = "Server is down")
+        assertEquals("Alert", payload.title)
+        assertEquals("Server is down", payload.body)
+        assertTrue(payload.data.isEmpty())
+    }
 }

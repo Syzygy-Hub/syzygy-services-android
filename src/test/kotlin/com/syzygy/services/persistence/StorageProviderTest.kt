@@ -186,6 +186,22 @@ class StorageProviderTest {
         assertEquals("decoding_failed", ex.code.rawValue)
     }
 
+    // ------------------------------------------------------------------
+    // Change 8e — clear() on empty store succeeds without throwing
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `SharedPreferences clear on empty store does not throw`() {
+        val store = SharedPreferencesStorageProvider()
+        store.clear() // must not throw on an empty store
+    }
+
+    @Test
+    fun `EncryptedStorageProvider clear on empty store does not throw`() {
+        val store = EncryptedStorageProvider()
+        store.clear() // must not throw on an empty store
+    }
+
     @Test
     fun `EncryptedStorageProvider stores different instances independently`() {
         val key = EncryptedStorageProvider.generateAesKey()

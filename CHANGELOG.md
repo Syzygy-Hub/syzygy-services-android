@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-06
+
+### Changed
+- CI migrated from inline workflow to Syzygy-Hub reusable workflow (`android-ci.yml`)
+- Foundation dependency constraint updated to `>=3.0.0`
+
+### Fixed
+- Biometric TODO comments re-tagged to `TODO(Foundation-future)`
+- Stale AGP migration comment removed
+- `BackoffStrategy.kt` deprecated typealiases removed
+
+---
+
 ## [1.2.0] - 2026-09-19
 
 ### Fixed
@@ -73,6 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CrashReporter interface and console crash logging stub
 - WebSocketProvider interface and OkHttp-style WebSocket stub
 
+[Unreleased]: https://github.com/Syzygy-Hub/syzygy-services-android/compare/3.0.0...HEAD
+[3.0.0]: https://github.com/Syzygy-Hub/syzygy-services-android/compare/1.2.0...3.0.0
 [1.2.0]: https://github.com/Syzygy-Hub/syzygy-services-android/compare/1.1.0...1.2.0
 [1.1.0]: https://github.com/Syzygy-Hub/syzygy-services-android/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/Syzygy-Hub/syzygy-services-android/releases/tag/1.0.0
